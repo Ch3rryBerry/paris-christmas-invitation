@@ -79,9 +79,11 @@
     .calendar-day:focus-visible,.month-step:focus-visible,.calendar-clear:focus-visible { outline:3px solid #8d9d7b66; outline-offset:2px }
     .calendar-result { margin:12px 0 0; color:#68746c; font-size:.78rem; line-height:1.55 }
     .calendar-clear { margin-top:8px; padding:5px 0; border:0; background:none; color:#8b3f46; font:600 .77rem 'DM Sans',sans-serif; cursor:pointer }
+    .calendar-picker.locked { pointer-events:none; opacity:.65 }
     .weather-note { margin:22px 0 4px; padding:16px 18px; border:1px solid #e8dcc4; border-left:3px solid #c6964f; border-radius:8px; background:linear-gradient(135deg,#fbf4e7,#fffdf7); text-align:left }
     .weather-note h3 { margin:0 0 6px; color:var(--pine); font:600 1.05rem 'Playfair Display',Georgia,serif }
     .weather-note p { margin:0; color:#566157; font-size:.84rem; line-height:1.65 }
+    .form-status { margin:18px 0 0; padding:13px 15px; border-radius:7px; background:#edf2e9; color:#244233; text-align:center; font-size:.9rem; font-weight:600; line-height:1.5 }
     .submit { display:block; width:100%; margin:24px 0 0; padding:15px 18px; border:0; border-radius:7px; background:var(--berry); color:white; font:700 1rem 'DM Sans',sans-serif; cursor:pointer; box-shadow:0 5px 0 #762d37; transition:transform .15s,background .2s }
     .submit:hover { background:#91323f; transform:translateY(-1px) }
     .submit:active { transform:translateY(2px); box-shadow:0 3px 0 #762d37 }
@@ -166,8 +168,7 @@
             <h2 id="form-title">Will you come with me?</h2>
             <p>Choose your answer, then tell me what you’re dreaming of.</p>
           </div>
-          <!-- Set the recipient email in the action URL before publishing. See README.md. -->
-          <form action="https://formsubmit.co/maddox.heyndrickx@hotmail.com" method="POST" id="rsvp-form">
+          <form action="https://formsubmit.co/ajax/maddox.heyndrickx@hotmail.com" method="POST" id="rsvp-form">
             <input type="hidden" name="_subject" value="Paris Christmas invitation — her reply ♥">
             <input type="hidden" name="_template" value="table">
             <div class="field">
@@ -205,6 +206,7 @@
               <p>From 23 December, the estimated temperature is around 4–9°C, so let’s dress warmly: a scarf, a big jacket, a comfy Christmas sweater, a Christmas hat, and ear warmers. We’ll stay cozy while we explore the market together.</p>
             </aside>
             <button class="submit" type="submit">Send my answer</button>
+            <p class="form-status" id="form-status" role="status" aria-live="polite" hidden></p>
             <p class="footnote">Your answers will come straight to me. No pressure on the date—we’ll plan our perfect day together.</p>
           </form>
         </section>
@@ -281,6 +283,54 @@
     document.getElementById('next-month').addEventListener('click', () => { shownMonth++; if (shownMonth > 11) { shownMonth = 0; shownYear++; } renderCalendar(); });
     document.getElementById('calendar-clear').addEventListener('click', () => { pickedDates.clear(); updatePickedDates(); renderCalendar(); });
     renderCalendar();
+    const rsvpForm = document.getElementById('rsvp-form');
+    const formStatus = document.getElementById('form-status');
+    const submitLockKey = 'paris-christmas-rsvp-submitted-v1';
+    function lockRsvpForm(message) {
+      rsvpForm.querySelectorAll('input, textarea, button, select').forEach(control => { control.disabled = true; });
+      rsvpForm.querySelectorAll('details').forEach(control => control.classList.add('locked'));
+      rsvpForm.classList.add('submitted');
+      const submitButton = rsvpForm.querySelector('.submit');
+      submitButton.textContent = 'Answer sent';
+      formStatus.textContent = message;
+      formStatus.hidden = false;
+    }
+    try {
+      if (localStorage.getItem(submitLockKey) === 'sent') {
+        lockRsvpForm('Thank you. This reply has already been sent from this browser.');
+      }
+    } catch (error) { /* The form can still be sent if browser storage is unavailable. */ }
+    rsvpForm.addEventListener('submit', async event => {
+      event.preventDefault();
+      try {
+        if (localStorage.getItem(submitLockKey) === 'sent') {
+          lockRsvpForm('Thank you. This reply has already been sent from this browser.');
+          return;
+        }
+      } catch (error) { /* Continue with the email submission. */ }
+      const submitButton = rsvpForm.querySelector('.submit');
+      submitButton.disabled = true;
+      submitButton.textContent = 'Sending…';
+      formStatus.textContent = 'Sending your reply…';
+      formStatus.hidden = false;
+      try {
+        const response = await fetch(rsvpForm.action, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+          body: JSON.stringify(Object.fromEntries(new FormData(rsvpForm).entries()))
+        });
+        const result = await response.json();
+        if (!response.ok || result.success === false || result.success === 'false') {
+          throw new Error(result.message || 'The form could not be sent.');
+        }
+        try { localStorage.setItem(submitLockKey, 'sent'); } catch (error) { /* Current page still locks below. */ }
+        lockRsvpForm('Your answer has been sent. Thank you! This form is now closed on this browser.');
+      } catch (error) {
+        submitButton.disabled = false;
+        submitButton.textContent = 'Try sending again';
+        formStatus.textContent = 'It could not be sent just now. Please try again.';
+      }
+    });
     document.getElementById('open-invite').addEventListener('click', () => {
       document.getElementById('intro').hidden = true;
       const invitation = document.getElementById('invitation');
